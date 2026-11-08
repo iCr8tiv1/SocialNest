@@ -14,6 +14,10 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
   ]),
   {
+    // The site intentionally uses plain anchors for full page loads.
+    rules: { "@next/next/no-html-link-for-pages": "off" },
+  },
+  {
     files: ["components/ui/**/*.{ts,tsx}", "hooks/use-mobile.ts"],
     rules: {
       // These files are vendored verbatim from shadcn@4.17.0. Keep the
