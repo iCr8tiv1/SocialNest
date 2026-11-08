@@ -37,8 +37,9 @@ export default function BookPage(){
     data.set("_subject","New Social Nest rental slot request");
     data.set("_template","table");
     data.set("_captcha","false");
-    data.set("_url","https://social-nest-gather.george-guthr-1405.chatgpt.site/book");
+    data.set("_url","https://social-nest.com/book");
     data.delete("addons");
+    fetch("/api/inquiries",{method:"POST",body:data}).catch(()=>{});
     try{
       const response=await fetch("https://formsubmit.co/ajax/info@social-nest.com",{
         method:"POST",

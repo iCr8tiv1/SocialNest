@@ -11,10 +11,13 @@ export function NestMark() {
 const nav = [
   ["The space", "/space"],
   ["Events", "/events"],
+  ["Network", "/network"],
+  ["Offices", "/offices"],
   ["Amenities", "/amenities"],
   ["Gallery", "/gallery"],
   ["Tour", "/tour"],
   ["FAQ", "/faq"],
+  ["Account", "/account"],
 ] as const;
 
 export function SiteHeader() {
@@ -36,7 +39,7 @@ export function SiteFooter() {
   return <footer>
     <a className="brand footer-brand" href="/"><NestMark /><span>SOCIAL NEST<small>Your place to gather</small></span></a>
     <p>Meet. Learn. Connect. Celebrate. Create.<br/><a className="footer-address" href="https://www.google.com/maps/search/?api=1&query=10301%20Democracy%20Ln%20Unit%20413%2C%20Fairfax%2C%20VA%2022030" target="_blank" rel="noreferrer">10301 Democracy Ln, Unit 413<br/>Fairfax, VA 22030</a><br/><a className="footer-email" href="mailto:info@social-nest.com">info@social-nest.com</a></p>
-    <nav aria-label="Footer navigation"><a href="/space">The space</a><a href="/tour">Schedule a tour</a><a href="/policies">Rental policies</a><a href="/privacy">Privacy</a><a href="/faq">FAQ</a><a href="/book">Book</a></nav>
+    <nav aria-label="Footer navigation"><a href="/space">The space</a><a href="/network">Network</a><a href="/offices">Office space</a><a href="/account">Member sign in</a><a href="/tour">Schedule a tour</a><a href="/policies">Rental policies</a><a href="/privacy">Privacy</a><a href="/faq">FAQ</a><a href="/book">Book</a></nav>
     <small>© 2026 Social Nest</small>
   </footer>;
 }
