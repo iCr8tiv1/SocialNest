@@ -1,7 +1,14 @@
 // Central place for environment configuration. Every feature degrades
 // gracefully when a service is not configured yet, so the site still builds
 // and the public pages still render.
-export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://social-nest.com").replace(/\/$/, "");
+const vercelProductionUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
+  ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+  : "";
+export const SITE_URL = (
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  vercelProductionUrl ||
+  "https://social-nest.com"
+).replace(/\/$/, "");
 export const SUPABASE_URL =
   process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
 export const SUPABASE_PUBLISHABLE_KEY =
