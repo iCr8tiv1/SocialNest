@@ -4,10 +4,11 @@ import { CheckCircle2, Users } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/site-chrome";
 import { BookingForm } from "@/components/booking-form";
 import { getSessionUser } from "@/lib/auth";
-import { stripeConfigured } from "@/lib/config";
+import { serverDataConfigured, stripeConfigured } from "@/lib/config";
 import { getActiveSpace, upcomingBlocks } from "@/lib/data";
 import { dateTime, money, shortDate, spaceKindLabel } from "@/lib/format";
-import { adminDb } from "@/lib/supabase/admin";
+import { createSessionClient } from "@/lib/supabase/server";
+import type { ProfileRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 type Props = { params: Promise<{ slug: string }>; searchParams: Promise<{ checkout?: string }> };
@@ -22,11 +23,13 @@ export default async function SpacePage({ params, searchParams }: Props) {
   const { checkout } = await searchParams;
   const space = await getActiveSpace(slug);
   if (!space) notFound();
-  const blocks = await upcomingBlocks(space.id);
+  const blocks = await upcomingBlocks(space.id) as { starts_at: string; ends_at: string; booking_type: string }[];
   const user = await getSessionUser();
   let prefill = {};
   if (user) {
-    const { data } = await adminDb().from("profiles").select("full_name, email, business_name, phone").eq("id", user.id).maybeSingle();
+    const db = await createSessionClient();
+    const { data: rawProfile } = db ? await db.rpc("get_my_profile").maybeSingle() : { data: null };
+    const data = rawProfile as ProfileRow | null;
     prefill = { name: data?.full_name || "", email: data?.email || user.email, business: data?.business_name || "", phone: data?.phone || "" };
   }
 
@@ -53,7 +56,7 @@ export default async function SpacePage({ params, searchParams }: Props) {
       </article>
       <aside className="detail-panel" id="book">
         {checkout === "cancelled" && <p className="notice">Checkout was cancelled — nothing was charged and the time wasn’t held.</p>}
-        <BookingForm slug={space.slug} rates={{ hourly: space.hourly_rate_cents, daily: space.daily_rate_cents, monthly: space.monthly_rate_cents }} payOnline={stripeConfigured} prefill={prefill} />
+        <BookingForm slug={space.slug} rates={{ hourly: space.hourly_rate_cents, daily: space.daily_rate_cents, monthly: space.monthly_rate_cents }} payOnline={stripeConfigured && serverDataConfigured} prefill={prefill} />
       </aside>
     </section>
     <SiteFooter />

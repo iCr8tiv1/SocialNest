@@ -7,8 +7,9 @@ import { getSessionUser } from "@/lib/auth";
 import { stripeConfigured } from "@/lib/config";
 import { getPublicEvent, seatsTaken } from "@/lib/data";
 import { longDate, money, timeOfDay } from "@/lib/format";
-import { adminDb } from "@/lib/supabase/admin";
+import { createSessionClient } from "@/lib/supabase/server";
 import { nowMs } from "@/lib/time";
+import type { ProfileRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,9 @@ export default async function EventPage({ params, searchParams }: Props) {
   const user = await getSessionUser();
   let prefill: { name?: string; email?: string; business?: string; industry?: string; phone?: string } = {};
   if (user) {
-    const { data } = await adminDb().from("profiles").select("full_name, email, business_name, industry, phone").eq("id", user.id).maybeSingle();
+    const db = await createSessionClient();
+    const { data: rawProfile } = db ? await db.rpc("get_my_profile").maybeSingle() : { data: null };
+    const data = rawProfile as ProfileRow | null;
     prefill = { name: data?.full_name || "", email: data?.email || user.email, business: data?.business_name || "", industry: data?.industry || "", phone: data?.phone || "" };
   }
 

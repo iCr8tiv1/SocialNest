@@ -9,6 +9,7 @@ import { EMAIL_RE, int, str, type FormState } from "@/lib/forms";
 import { dateTime, etToIso, money } from "@/lib/format";
 import { notifyInbox } from "@/lib/notify";
 import { adminDb } from "@/lib/supabase/admin";
+import { createSessionClient } from "@/lib/supabase/server";
 
 function addDays(date: string, days: number) {
   const d = new Date(`${date}T12:00:00Z`);
@@ -26,7 +27,6 @@ function addMonths(date: string, months: number) {
 }
 
 export async function requestBooking(slug: string, _prev: FormState, form: FormData): Promise<FormState> {
-  if (!serverDataConfigured) return { error: "Online booking isn't open yet. Please email info@social-nest.com." };
   const space = await getActiveSpace(slug);
   if (!space) return { error: "This space is no longer available." };
 
@@ -68,14 +68,38 @@ export async function requestBooking(slug: string, _prev: FormState, form: FormD
   if (new Date(startsAt).getTime() < Date.now()) return { error: "Please choose a date and time in the future." };
   const amount = rate * units;
 
+  // Monthly terms need an agreement, so they're always reviewed first.
+  const payNow = type !== "monthly" && stripeConfigured && serverDataConfigured && amount > 0;
+  if (!payNow) {
+    const sessionDb = await createSessionClient();
+    if (!sessionDb) return { error: "Booking requests are temporarily unavailable. Please try again shortly." };
+    const { data, error } = await sessionDb.rpc("request_space_booking", {
+      p_space_id: space.id,
+      p_name: name,
+      p_email: email,
+      p_phone: str(form, "phone", 40) || null,
+      p_business_name: str(form, "business", 160) || null,
+      p_notes: str(form, "notes", 1000) || null,
+      p_booking_type: type,
+      p_starts_at: startsAt,
+      p_units: units,
+    });
+    const booking = Array.isArray(data) ? data[0] : data;
+    if (error || !booking) return { error: "We couldn't save your request. Please try again." };
+    await notifyInbox(`Office space request — ${space.name}`, {
+      Space: space.name, Term: `${units} ${unitLabel} (${type})`,
+      Starts: dateTime(startsAt), Ends: dateTime(booking.ends_at || endsAt), Estimate: money(booking.amount_cents ?? amount),
+      Name: name, Email: email, Phone: str(form, "phone"), Business: str(form, "business"), Notes: str(form, "notes"),
+    });
+    return { ok: true, message: `Request received for ${space.name}. We'll confirm availability and next steps by email.` };
+  }
+
   const db = adminDb();
   const { data: clash } = await db.from("space_bookings").select("id")
     .eq("space_id", space.id).in("status", ["pending_payment", "confirmed"])
     .lt("starts_at", endsAt).gt("ends_at", startsAt).limit(1);
   if (clash?.length) return { error: "That time is already booked. Please choose another time." };
 
-  // Monthly terms need an agreement, so they're always reviewed first.
-  const payNow = type !== "monthly" && stripeConfigured && amount > 0;
   const user = await getSessionUser();
   const { data: booking, error } = await db.from("space_bookings").insert({
     space_id: space.id, user_id: user?.id ?? null, name, email,
@@ -87,15 +111,6 @@ export async function requestBooking(slug: string, _prev: FormState, form: FormD
   }).select("id").single();
   if (error?.code === "23P01") return { error: "That time was just booked. Please choose another time." };
   if (error || !booking) return { error: "We couldn't save your request. Please try again." };
-
-  if (!payNow) {
-    await notifyInbox(`Office space request — ${space.name}`, {
-      Space: space.name, Term: `${units} ${unitLabel} (${type})`,
-      Starts: dateTime(startsAt), Ends: dateTime(endsAt), Estimate: money(amount),
-      Name: name, Email: email, Phone: str(form, "phone"), Business: str(form, "business"), Notes: str(form, "notes"),
-    });
-    return { ok: true, message: `Request received for ${space.name}. We'll confirm availability and next steps by email.` };
-  }
 
   let checkoutUrl: string;
   try {

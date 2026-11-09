@@ -9,13 +9,13 @@ import { EMAIL_RE, int, str, type FormState } from "@/lib/forms";
 import { longDate, money, timeOfDay } from "@/lib/format";
 import { notifyInbox } from "@/lib/notify";
 import { adminDb } from "@/lib/supabase/admin";
+import { createSessionClient } from "@/lib/supabase/server";
 
 export async function registerForEvent(slug: string, _prev: FormState, form: FormData): Promise<FormState> {
-  if (!serverDataConfigured) return { error: "Registration isn't open yet. Please email info@social-nest.com." };
   const event = await getPublicEvent(slug);
   if (!event || event.status !== "published") return { error: "This event is no longer open for registration." };
   if (new Date(event.starts_at).getTime() < Date.now()) return { error: "This event has already started." };
-  if (event.price_cents > 0 && !stripeConfigured) return { error: "Online ticket sales open soon. Email info@social-nest.com to reserve a seat." };
+  if (event.price_cents > 0 && (!stripeConfigured || !serverDataConfigured)) return { error: "Online ticket sales open soon. Email info@social-nest.com to reserve a seat." };
 
   const name = str(form, "name", 120);
   const email = str(form, "email", 200).toLowerCase();
@@ -31,6 +31,32 @@ export async function registerForEvent(slug: string, _prev: FormState, form: For
 
   const user = await getSessionUser();
   const amount = event.price_cents * quantity;
+  if (amount === 0) {
+    const sessionDb = await createSessionClient();
+    if (!sessionDb) return { error: "Registration is temporarily unavailable. Please try again shortly." };
+    const { data, error } = await sessionDb.rpc("register_free_event", {
+      p_event_id: event.id,
+      p_name: name,
+      p_email: email,
+      p_phone: str(form, "phone", 40) || null,
+      p_business_name: str(form, "business", 160) || null,
+      p_industry: str(form, "industry", 80) || null,
+      p_notes: str(form, "notes", 1000) || null,
+      p_quantity: quantity,
+    });
+    const registration = Array.isArray(data) ? data[0] : data;
+    if (error || !registration) {
+      if (error?.message?.includes("already registered")) return { error: "That email is already registered for this event." };
+      if (error?.message?.includes("seats")) return { error: "There aren't enough seats left for that group size." };
+      return { error: "We couldn't save your registration. Please try again." };
+    }
+    await notifyInbox(`New RSVP — ${event.title}`, {
+      Event: event.title, Date: `${longDate(event.starts_at)} at ${timeOfDay(event.starts_at)}`,
+      Name: name, Email: email, Business: str(form, "business"), Guests: quantity,
+    });
+    return { ok: true, code: registration.checkin_code, message: `You're on the list for ${event.title}.` };
+  }
+
   const db = adminDb();
   const { data: registration, error } = await db.from("event_registrations").insert({
     event_id: event.id,
@@ -44,14 +70,6 @@ export async function registerForEvent(slug: string, _prev: FormState, form: For
     status: amount > 0 ? "pending_payment" : "confirmed",
   }).select("id, checkin_code").single();
   if (error || !registration) return { error: "We couldn't save your registration. Please try again." };
-
-  if (amount === 0) {
-    await notifyInbox(`New RSVP — ${event.title}`, {
-      Event: event.title, Date: `${longDate(event.starts_at)} at ${timeOfDay(event.starts_at)}`,
-      Name: name, Email: email, Business: str(form, "business"), Guests: quantity,
-    });
-    return { ok: true, code: registration.checkin_code, message: `You're on the list for ${event.title}.` };
-  }
 
   let checkoutUrl: string;
   try {

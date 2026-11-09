@@ -1,6 +1,4 @@
 import "server-only";
-import { serverDataConfigured } from "@/lib/config";
-import { adminDb } from "@/lib/supabase/admin";
 import { publicDb } from "@/lib/supabase/public";
 import type { EventRow, ProfileRow, SpaceRow } from "@/lib/types";
 
@@ -28,12 +26,10 @@ export async function getPublicEvent(slug: string): Promise<EventRow | null> {
 
 /** Seats taken by confirmed registrations and unexpired payment holds. */
 export async function seatsTaken(eventId: string): Promise<number> {
-  if (!serverDataConfigured) return 0;
-  const holdCutoff = new Date(Date.now() - 35 * 60000).toISOString();
-  const { data } = await adminDb().from("event_registrations").select("quantity, status, created_at")
-    .eq("event_id", eventId).in("status", ["confirmed", "pending_payment"]);
-  return (data || []).reduce((sum, row) =>
-    row.status === "confirmed" || row.created_at > holdCutoff ? sum + row.quantity : sum, 0);
+  const db = publicDb();
+  if (!db) return 0;
+  const { data } = await db.rpc("event_seats_taken", { p_event_id: eventId });
+  return typeof data === "number" ? data : 0;
 }
 
 export async function listActiveSpaces(): Promise<SpaceRow[]> {
@@ -52,10 +48,9 @@ export async function getActiveSpace(slug: string): Promise<SpaceRow | null> {
 
 /** Upcoming held/confirmed time ranges for a space (no personal details). */
 export async function upcomingBlocks(spaceId: string) {
-  if (!serverDataConfigured) return [];
-  const { data } = await adminDb().from("space_bookings").select("starts_at, ends_at, booking_type")
-    .eq("space_id", spaceId).in("status", ["pending_payment", "confirmed"])
-    .gte("ends_at", new Date().toISOString()).order("starts_at").limit(30);
+  const db = publicDb();
+  if (!db) return [];
+  const { data } = await db.rpc("space_upcoming_blocks", { p_space_id: spaceId });
   return data || [];
 }
 

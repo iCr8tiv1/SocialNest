@@ -2,10 +2,10 @@ import { SiteFooter, SiteHeader } from "@/components/site-chrome";
 import { ProfileForm, ReferralForm } from "@/components/account-forms";
 import { updateReferral } from "@/app/account/actions";
 import { requireUser } from "@/lib/auth";
-import { serverDataConfigured } from "@/lib/config";
 import { dateTime, longDate, money, timeOfDay } from "@/lib/format";
-import { adminDb } from "@/lib/supabase/admin";
+import { createSessionClient } from "@/lib/supabase/server";
 import { nowMs } from "@/lib/time";
+import type { ProfileRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Your account | Social Nest", robots: { index: false } };
@@ -19,16 +19,16 @@ const statusLabel: Record<string, string> = { confirmed: "Confirmed", pending_pa
 export default async function AccountPage({ searchParams }: { searchParams: Promise<{ notice?: string }> }) {
   const user = await requireUser("/account");
   const { notice } = await searchParams;
-  if (!serverDataConfigured) return <main><SiteHeader /><section className="auth-section"><h1>Accounts are almost ready.</h1></section><SiteFooter /></main>;
-  const db = adminDb();
-  const mine = `user_id.eq.${user.id},email.eq."${user.email.replace(/"/g, "")}"`;
+  const db = await createSessionClient();
+  if (!db) return <main><SiteHeader /><section className="auth-section"><h1>Accounts are temporarily unavailable.</h1></section><SiteFooter /></main>;
   const [{ data: profile }, { data: regs }, { data: bookings }, { data: referrals }, { data: members }] = await Promise.all([
-    db.from("profiles").select("*").eq("id", user.id).maybeSingle(),
-    db.from("event_registrations").select("id, quantity, status, checkin_code, checked_in_at, amount_cents, events(title, slug, starts_at)").or(mine).neq("status", "cancelled").order("created_at", { ascending: false }).limit(50),
-    db.from("space_bookings").select("id, status, booking_type, starts_at, ends_at, amount_cents, spaces(name)").or(mine).order("starts_at", { ascending: false }).limit(50),
-    db.from("referrals").select("*").or(`from_user.eq.${user.id},to_user.eq.${user.id}`).order("created_at", { ascending: false }).limit(100),
+    db.rpc("get_my_profile").maybeSingle(),
+    db.from("event_registrations").select("id, quantity, status, checkin_code, checked_in_at, amount_cents, events(title, slug, starts_at)").neq("status", "cancelled").order("created_at", { ascending: false }).limit(50),
+    db.from("space_bookings").select("id, status, booking_type, starts_at, ends_at, amount_cents, spaces(name)").order("starts_at", { ascending: false }).limit(50),
+    db.from("referrals").select("*").order("created_at", { ascending: false }).limit(100),
     db.from("profiles").select("id, full_name, business_name").eq("directory_visible", true).neq("id", user.id).not("full_name", "is", null).order("full_name"),
   ]);
+  const profileRow = profile as ProfileRow | null;
   const names = new Map((members || []).map((m) => [m.id, m.business_name ? `${m.full_name} · ${m.business_name}` : m.full_name]));
   const sent = ((referrals || []) as Referral[]).filter((r) => r.from_user === user.id);
   const received = ((referrals || []) as Referral[]).filter((r) => r.to_user === user.id);
@@ -38,7 +38,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
   return <main>
     <SiteHeader />
     <section className="account-hero">
-      <div><p className="eyebrow">Your account</p><h1>Welcome{profile?.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}.</h1><p>{user.email}</p></div>
+      <div><p className="eyebrow">Your account</p><h1>Welcome{profileRow?.full_name ? `, ${profileRow.full_name.split(" ")[0]}` : ""}.</h1><p>{user.email}</p></div>
       <div className="account-hero-actions">
         {user.isAdmin && <a className="button" href="/admin">Admin dashboard</a>}
         <form action="/auth/signout" method="post"><button className="text-link" type="submit">Sign out</button></form>
@@ -62,7 +62,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
       </div>
       <div className="account-card account-card-wide">
         <p className="eyebrow">Your directory profile</p>
-        <ProfileForm profile={profile} />
+        <ProfileForm profile={profileRow} />
       </div>
       <div className="account-card">
         <p className="eyebrow">Referrals for you ({received.length})</p>
@@ -78,7 +78,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
       </div>
       <div className="account-card">
         <p className="eyebrow">Send a referral</p>
-        {profile?.directory_visible ? <ReferralForm members={(members || []).map((m) => ({ id: m.id, label: names.get(m.id) as string }))} />
+        {profileRow?.directory_visible ? <ReferralForm members={(members || []).map((m) => ({ id: m.id, label: names.get(m.id) as string }))} />
           : <p className="muted">Join the directory (above) to send and receive referrals.</p>}
         {sent.length > 0 && <><p className="eyebrow sub-eyebrow">Sent ({sent.length})</p><ul className="row-list">{sent.map((r) => <li key={r.id}><div><b>{r.contact_name}</b><span>To {names.get(r.to_user) || "a member"}</span></div><span className="pill">{r.status}</span></li>)}</ul></>}
       </div>
