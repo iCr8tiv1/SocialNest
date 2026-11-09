@@ -54,23 +54,30 @@ export async function upcomingBlocks(spaceId: string) {
   return data || [];
 }
 
-export async function listDirectory(filters: { q?: string; industry?: string }): Promise<ProfileRow[]> {
+export async function listDirectory(filters: { q?: string; industry?: string; city?: string; sort?: "business" | "name" | "newest" }): Promise<ProfileRow[]> {
   const db = publicDb();
   if (!db) return [];
   let query = db.from("profiles").select(PUBLIC_PROFILE_COLS).eq("directory_visible", true)
-    .not("full_name", "is", null).order("business_name", { nullsFirst: false });
+    .not("full_name", "is", null);
   if (filters.industry) query = query.eq("industry", filters.industry);
+  if (filters.city) query = query.eq("city", filters.city);
   if (filters.q) {
     const q = filters.q.replace(/[%,()]/g, " ").trim();
-    if (q) query = query.or(`full_name.ilike.%${q}%,business_name.ilike.%${q}%,bio.ilike.%${q}%,title.ilike.%${q}%`);
+    if (q) query = query.or(`full_name.ilike.%${q}%,business_name.ilike.%${q}%,bio.ilike.%${q}%,title.ilike.%${q}%,industry.ilike.%${q}%,city.ilike.%${q}%`);
   }
+  if (filters.sort === "name") query = query.order("full_name");
+  else if (filters.sort === "newest") query = query.order("created_at", { ascending: false });
+  else query = query.order("business_name", { nullsFirst: false }).order("full_name");
   const { data } = await query.limit(200);
   return (data as ProfileRow[]) || [];
 }
 
-export async function directoryIndustries(): Promise<string[]> {
+export async function directoryFacets(): Promise<{ industries: string[]; cities: string[] }> {
   const db = publicDb();
-  if (!db) return [];
-  const { data } = await db.from("profiles").select("industry").eq("directory_visible", true).not("industry", "is", null);
-  return [...new Set((data || []).map((row) => row.industry as string))].sort();
+  if (!db) return { industries: [], cities: [] };
+  const { data } = await db.from("profiles").select("industry, city").eq("directory_visible", true);
+  return {
+    industries: [...new Set((data || []).map((row) => row.industry as string).filter(Boolean))].sort(),
+    cities: [...new Set((data || []).map((row) => row.city as string).filter(Boolean))].sort(),
+  };
 }

@@ -60,7 +60,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
           <div className="row-end"><span className={`pill pill-${b.status}`}>{statusLabel[b.status]}</span><small>{money(b.amount_cents)}</small></div>
         </li>)}</ul> : <p className="muted">No bookings yet. <a className="text-link" href="/offices">See office space</a></p>}
       </div>
-      <div className="account-card account-card-wide">
+      <div className="account-card account-card-wide" id="profile">
         <p className="eyebrow">Your directory profile</p>
         <ProfileForm profile={profileRow} />
       </div>
